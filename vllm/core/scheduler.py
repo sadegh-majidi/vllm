@@ -1089,7 +1089,7 @@ class Scheduler:
         decodes. If there's a pressure on GPU memory, decode requests can
         be swapped or preempted.
         """
-
+        global printed_budget, debug_f_pass
         if not printed_budget:
             print(f"Maximum batching budget is Max Tokens: {self.scheduler_config.max_num_batched_tokens} and Max Sequences: {self.scheduler_config.max_num_seqs}.\n")
             printed_budget = True
@@ -1244,6 +1244,7 @@ class Scheduler:
         inter token latency because decodes requests don't need to be blocked
         by prefill requests.
         """
+        global printed_budget, debug_mc_f_pass
 
         if not printed_budget:
             print(f"Maximum batching budget is Max Tokens: {self.scheduler_config.max_num_batched_tokens} and Max Sequences: {self.scheduler_config.max_num_seqs}.\n")
