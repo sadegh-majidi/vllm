@@ -27,6 +27,10 @@ ENABLE_ARTIFICIAL_PREEMPT = bool(
 ARTIFICIAL_PREEMPTION_PROB = 0.5
 ARTIFICIAL_PREEMPTION_MAX_CNT = 500
 
+debug_dc_f_pass = 1
+debug_mc_f_pass = 1
+printed_budget = False
+
 
 class PreemptionMode(enum.Enum):
     """Preemption modes.
@@ -536,6 +540,7 @@ class Scheduler:
         Returns:
             SchedulerRunningOutputs.
         """
+        print("^^^^^^^^^^^^^^  START of RUNNING (DECODE & CHUNKED PREFILL) SCHEDULING  ^^^^^^^^^^^^^^^^")
         ret: SchedulerRunningOutputs = \
             self._scheduler_running_outputs_cache[self.cache_id].get_object()
         ret.blocks_to_swap_out.clear()
@@ -601,6 +606,9 @@ class Scheduler:
                 num_running_seqs = seq_group.get_max_num_running_seqs()
                 budget.subtract_num_seqs(seq_group.request_id,
                                          num_running_seqs)
+                print("************************ BUDGET UPDATE ******************************")
+                print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Subtracted request: {seq_group.request_id} set to be priority preempted, Subtracted batch toks: {num_running_tokens} Subtracted seqs: {num_running_seqs}")
+                print("*********************************************************************")
 
                 if (curr_loras is not None and seq_group.lora_int_id > 0
                         and seq_group.lora_int_id in curr_loras):
@@ -669,12 +677,20 @@ class Scheduler:
                 if enable_chunking:
                     num_running_seqs = seq_group.get_max_num_running_seqs()
                     budget.add_num_seqs(seq_group.request_id, num_running_seqs)
+                    print("************************ BUDGET UPDATE ******************************")
+                    print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Added request: {seq_group.request_id} set to run, Added batch toks: {num_running_tokens} Added seqs: {num_running_seqs}")
+                    print("*********************************************************************")
+                else:
+                    print("************************ BUDGET UPDATE ******************************")
+                    print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Added request: {seq_group.request_id} set to run, Added batch toks: {num_running_tokens}")
+                    print("*********************************************************************")
                 if curr_loras is not None and seq_group.lora_int_id > 0:
                     curr_loras.add(seq_group.lora_int_id)
 
         self._scheduler_running_outputs_cache[self.next_cache_id].reset()
         self._scheduled_seq_group_cache[self.next_cache_id].reset()
 
+        print("^^^^^^^^^^^^^^  END of RUNNING (DECODE & CHUNKED PREFILL) SCHEDULING  ^^^^^^^^^^^^^^^^")
         return ret
 
     def _schedule_swapped(
@@ -702,6 +718,7 @@ class Scheduler:
         Returns:
             SchedulerSwappedInOutputs.
         """
+        print("^^^^^^^^^^^^^^  START of SWAPPED SCHEDULING  ^^^^^^^^^^^^^^^^")
         # Blocks that need to be swapped or copied before model execution.
         blocks_to_swap_in: List[Tuple[int, int]] = []
         blocks_to_copy: List[Tuple[int, int]] = []
@@ -758,6 +775,7 @@ class Scheduler:
                     num_new_tokens=num_new_tokens_uncached,
                     num_new_seqs=num_new_seqs,
             ):
+                print("//////////// TOKEN BUDGET HIT DETECTED - No Further Action //////////////////")
                 break
 
             if lora_int_id > 0 and curr_loras is not None:
@@ -782,8 +800,13 @@ class Scheduler:
                 num_cached_tokens=num_new_tokens_cached,
             )
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+            print("************************ BUDGET UPDATE ******************************")
+            print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Added request: {seq_group.request_id} set to run, Added batch toks: {num_new_tokens_uncached} Added cached toks: {num_new_tokens_cached} Added seqs: {num_new_seqs}")
+            print("*********************************************************************")
 
         swapped_queue.extendleft(leftover_swapped)
+
+        print("^^^^^^^^^^^^^^  END of SWAPPED SCHEDULING  ^^^^^^^^^^^^^^^^")
 
         return SchedulerSwappedInOutputs(
             decode_seq_groups=decode_seq_groups,
@@ -836,6 +859,7 @@ class Scheduler:
             A count of priority-based preemptions.
         """
 
+        print("^^^^^^^^^^^^^^  START of PRIORITY PREEMPTION SCHEDULING  ^^^^^^^^^^^^^^^^")
         waiting_queue = self.waiting
 
         running_queue = deque(sorted(self.running, key=self._get_priority))
@@ -873,6 +897,9 @@ class Scheduler:
                 num_running_seqs = vseq_group.get_max_num_running_seqs()
                 budget.subtract_num_seqs(vseq_group.request_id,
                                          num_running_seqs)
+                print("************************ BUDGET UPDATE ******************************")
+                print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Subtracted request: {vseq_group.request_id} set to be priority preempted, Subtracted batch toks: {num_running_tokens_uncached} Subtracted seqs: {num_running_seqs}")
+                print("*********************************************************************")
 
                 #Preempt out the victim sequence group
                 self._preempt(vseq_group, blocks_to_swap_out)
@@ -885,6 +912,7 @@ class Scheduler:
 
         self.waiting = waiting_queue
         self.running = running_queue
+        print("^^^^^^^^^^^^^^  END of PRIORITY PREEMPTION SCHEDULING  ^^^^^^^^^^^^^^^^")
         return force_preemption_count
 
     def _schedule_prefills(
@@ -916,6 +944,7 @@ class Scheduler:
         Returns:
             SchedulerPrefillOutputs.
         """
+        print("^^^^^^^^^^^^^^  START of PREFILL SCHEDULING  ^^^^^^^^^^^^^^^^")
         ignored_seq_groups: List[SequenceGroup] = []
         seq_groups: List[ScheduledSequenceGroup] = []
 
@@ -990,6 +1019,7 @@ class Scheduler:
                 # We've reached the budget limit - since there might be
                 # continuous prefills in the running queue, we should break
                 # to avoid scheduling any new prefills.
+                print("//////////// TOKEN BUDGET HIT DETECTED - No Further Action //////////////////")
                 break
 
             num_new_seqs = seq_group.get_max_num_running_seqs()
@@ -997,6 +1027,9 @@ class Scheduler:
                     num_new_tokens=num_new_tokens_uncached,
                     num_new_seqs=num_new_seqs,
             ):
+                print("//////////// BUDGET HIT //////////////////")
+                print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} New toks: {num_new_tokens} New seqs: {num_new_seqs}")
+                print("//////////////////////////////////////////")
                 break
 
             # Can schedule this request.
@@ -1031,11 +1064,16 @@ class Scheduler:
                 num_cached_tokens=num_new_tokens_cached,
             )
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
+            print("************************ BUDGET UPDATE ******************************")
+            print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs} Added request: {seq_group.request_id} set to run, Added batch toks: {num_new_tokens_uncached} Added cached toks: {num_new_tokens_cached} Added seqs: {num_new_seqs}")
+            print("*********************************************************************")
 
         # Queue requests that couldn't be scheduled.
         waiting_queue.extendleft(leftover_waiting_sequences)
         if len(seq_groups) > 0:
             self.prev_prompt = True
+
+        print("^^^^^^^^^^^^^^  END of PREFILL SCHEDULING  ^^^^^^^^^^^^^^^^")
 
         return SchedulerPrefillOutputs(
             seq_groups=seq_groups,
@@ -1051,6 +1089,16 @@ class Scheduler:
         decodes. If there's a pressure on GPU memory, decode requests can
         be swapped or preempted.
         """
+
+        if not printed_budget:
+            print(f"Maximum batching budget is Max Tokens: {self.scheduler_config.max_num_batched_tokens} and Max Sequences: {self.scheduler_config.max_num_seqs}.\n")
+            printed_budget = True
+
+        print("==============================================================")
+        print(f"Default Continuous: Start of the forward pass {debug_f_pass} scheduling at time {time.time()}")
+        print("==============================================================")
+        debug_f_pass += 1
+
         # Include running requests to the budget.
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
@@ -1061,6 +1109,9 @@ class Scheduler:
         for seq_group in self.running:
             budget.add_num_seqs(seq_group.request_id,
                                 seq_group.get_max_num_running_seqs())
+        print("************************ INITIAL BUDGET AT THIS RUN ******************************")
+        print(f"Current tokens: {budget.num_batched_tokens} Current seqs: {budget.num_curr_seqs}")
+        print("*********************************************************************")
         curr_loras = set(
             seq_group.lora_int_id for seq_group in self.running
             if seq_group.lora_int_id > 0) if self.lora_enabled else None
@@ -1099,20 +1150,51 @@ class Scheduler:
 
         # Update waiting requests.
         self.waiting.extendleft(running_scheduled.preempted)
+        print("-------------------------------------------------------------")
+        print(f"Requests preempted in this run ({len(running_scheduled.preempted)}):")
+        for x in running_scheduled.preempted:
+            print(x)
+            print()
+        print("-------------------------------------------------------------")
         # Update new running requests.
         if len(prefills.seq_groups) > 0:
             self.running.extend([s.seq_group for s in prefills.seq_groups])
+            print("-------------------------------------------------------------")
+            print(f"Prefill requests running in this run ({len(prefills.seq_groups)}):")
+            for x in prefills.seq_groups:
+                print(x.seq_group)
+                print(f"Token chunk size: {x.token_chunk_size}\n")
+            print("-------------------------------------------------------------")
 
         self.running.extend(running_scheduled.decode_seq_groups_list)
+        print("-------------------------------------------------------------")
+        print(f"Decode requests running in this run ({len(running_scheduled.decode_seq_groups_list)}):")
+        for x in running_scheduled.decode_seq_groups_list:
+            print(x)
+            print()
+        print("-------------------------------------------------------------")
 
         if len(swapped_in.decode_seq_groups) > 0:
             self.running.extend(
                 [s.seq_group for s in swapped_in.decode_seq_groups])
+            print("-------------------------------------------------------------")
+            print(f"Swapped in requests running in this run ({len(swapped_in.decode_seq_groups)}):")
+            for x in swapped_in.decode_seq_groups:
+                print(x.seq_group)
+                print(f"Token chunk size: {x.token_chunk_size}\n")
+            print("-------------------------------------------------------------")
 
         # Update swapped requests.
         self.swapped.extend(running_scheduled.swapped_out)
         preempted = (len(running_scheduled.preempted) +
                      len(running_scheduled.swapped_out))
+
+        print("-------------------------------------------------------------")
+        print(f"Requests swapped out in this run ({len(running_scheduled.swapped_out)}):")
+        for x in running_scheduled.swapped_out:
+            print(x)
+            print()
+        print("-------------------------------------------------------------")
 
         # There should be no prefill from running queue because this policy
         # doesn't allow chunked prefills.
@@ -1162,6 +1244,16 @@ class Scheduler:
         inter token latency because decodes requests don't need to be blocked
         by prefill requests.
         """
+
+        if not printed_budget:
+            print(f"Maximum batching budget is Max Tokens: {self.scheduler_config.max_num_batched_tokens} and Max Sequences: {self.scheduler_config.max_num_seqs}.\n")
+            printed_budget = True
+
+        print("==============================================================")
+        print(f"Mixed Continuous: Start of the forward pass {debug_mc_f_pass} scheduling at time {time.time()}")
+        print("==============================================================")
+        debug_mc_f_pass += 1
+
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
             max_num_seqs=self.scheduler_config.max_num_seqs,
@@ -1192,6 +1284,12 @@ class Scheduler:
 
         # Update waiting requests.
         self.waiting.extendleft(running_scheduled.preempted)
+        print("-------------------------------------------------------------")
+        print(f"Requests preempted in this run ({len(running_scheduled.preempted)}):")
+        for x in running_scheduled.preempted:
+            print(x)
+            print()
+        print("-------------------------------------------------------------")
 
         # Update new running requests.
         # By default, vLLM scheduler prioritizes prefills.
@@ -1199,16 +1297,57 @@ class Scheduler:
         # the policy is changed to prioritize decode requests.
         self.running.extend(
             [s.seq_group for s in swapped_in.decode_seq_groups])
+        print("-------------------------------------------------------------")
+        print(f"Swapped in decode requests running in this run ({len(swapped_in.decode_seq_groups)}):")
+        for x in swapped_in.decode_seq_groups:
+            print(x.seq_group)
+            print(f"Token chunk size: {x.token_chunk_size}\n")
+        print("-------------------------------------------------------------")
+
         self.running.extend(
             [s.seq_group for s in swapped_in.prefill_seq_groups])
+        print("-------------------------------------------------------------")
+        print(f"Swapped in prefill requests running in this run ({len(swapped_in.prefill_seq_groups)}):")
+        for x in swapped_in.prefill_seq_groups:
+            print(x.seq_group)
+            print(f"Token chunk size: {x.token_chunk_size}\n")
+        print("-------------------------------------------------------------")
+
         self.running.extend(
             [s.seq_group for s in running_scheduled.decode_seq_groups])
+        print("-------------------------------------------------------------")
+        print(f"Decode requests running in this run ({len(running_scheduled.decode_seq_groups)}):")
+        for x in running_scheduled.decode_seq_groups:
+            print(x.seq_group)
+            print(f"Token chunk size: {x.token_chunk_size}\n")
+        print("-------------------------------------------------------------")
+        
         self.running.extend(
             [s.seq_group for s in running_scheduled.prefill_seq_groups])
+        print("-------------------------------------------------------------")
+        print(f"Sched Prefill requests running in this run ({len(running_scheduled.prefill_seq_groups)}):")
+        for x in running_scheduled.prefill_seq_groups:
+            print(x.seq_group)
+            print(f"Token chunk size: {x.token_chunk_size}\n")
+        print("-------------------------------------------------------------")
+
         self.running.extend([s.seq_group for s in prefills.seq_groups])
+        print("-------------------------------------------------------------")
+        print(f"Prefill requests running in this run ({len(prefills.seq_groups)}):")
+        for x in prefills.seq_groups:
+            print(x.seq_group)
+            print(f"Token chunk size: {x.token_chunk_size}\n")
+        print("-------------------------------------------------------------")
 
         # Update swapped requests.
         self.swapped.extend(running_scheduled.swapped_out)
+        print("-------------------------------------------------------------")
+        print(f"Requests swapped out in this run ({len(running_scheduled.swapped_out)}):")
+        for x in running_scheduled.swapped_out:
+            print(x)
+            print()
+        print("-------------------------------------------------------------")
+
         # Put prefills first due to Attention backend ordering assumption.
         scheduled_seq_groups = (prefills.seq_groups +
                                 running_scheduled.prefill_seq_groups +
