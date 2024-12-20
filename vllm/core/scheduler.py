@@ -1089,15 +1089,15 @@ class Scheduler:
         decodes. If there's a pressure on GPU memory, decode requests can
         be swapped or preempted.
         """
-        global printed_budget, debug_f_pass
+        global printed_budget, debug_dc_f_pass
         if not printed_budget:
             print(f"Maximum batching budget is Max Tokens: {self.scheduler_config.max_num_batched_tokens} and Max Sequences: {self.scheduler_config.max_num_seqs}.\n")
             printed_budget = True
 
         print("==============================================================")
-        print(f"Default Continuous: Start of the forward pass {debug_f_pass} scheduling at time {time.time()}")
+        print(f"Default Continuous: Start of the forward pass {debug_dc_f_pass} scheduling at time {time.time()}")
         print("==============================================================")
-        debug_f_pass += 1
+        debug_dc_f_pass += 1
 
         # Include running requests to the budget.
         budget = SchedulingBudget(
