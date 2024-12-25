@@ -35,7 +35,7 @@ def send_prompt(prompt, num, model="meta-llama/Llama-2-7b-hf", max_tokens=700, t
             if line:
                 first_token_time = time.time()
                 decoded_line = line.decode("utf-8")
-                result = json.loads(decoded_line).get("choices", [{}])[0].get("text", "No response text.")
+                result = json.loads(decoded_line.replace("data: ", "")).get("choices", [{}])[0].get("text", "No response text.")
                 print(f"Prompt: {prompt}\n{Colors.OKGREEN}First Token: {result}{Colors.ENDC}\n")
                 break
 
