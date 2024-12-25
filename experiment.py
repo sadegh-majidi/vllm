@@ -3,7 +3,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
-VLLM_HOST = "http://0.0.0.0:80"
+VLLM_HOST = "http://0.0.0.0:8000"
 url = f"{VLLM_HOST}/v1/completions"
 
 def send_prompt(prompt, num, model="meta-llama/Llama-2-7b-hf", max_tokens=700, temperature=0):
